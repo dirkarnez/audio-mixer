@@ -1,0 +1,117 @@
+name: cpp-cmake-mingw-prebuilt-release-actions-workflow
+on:
+  push:
+    # Sequence of patterns matched against refs/tags
+    tags:
+      - 'v*' # Push events to matching v*, i.e. v1.0, v20.15.10
+      - 'c*'
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        compiler:
+        - {
+            name: "x86_64-8.1.0-release-posix-seh-rt_v6-rev0",
+            url: "https://github.com/dirkarnez/cpp-tools/raw/main/x86_64-8.1.0-release-posix-seh-rt_v6-rev0.7z",
+            generator: "MinGW Makefiles",
+            on: "windows-latest"
+          }
+        # - {
+        #     name: "winlibs-x86_64-posix-seh-gcc-11.2.0-mingw-w64-9.0.0-r1",
+        #     url: "https://github.com/brechtsanders/winlibs_mingw/releases/download/11.2.0-12.0.1-9.0.0-r1/winlibs-x86_64-posix-seh-gcc-11.2.0-mingw-w64-9.0.0-r1.zip",
+        #     generator: "MinGW Makefiles",
+        #     on: "windows-latest"
+        #   }
+        # - {
+        #     name: "msvc2019",
+        #     generator:  "Visual Studio 16 2019",
+        #     extra: "-A x64",
+        #     on: "windows-2019"
+        #   }
+        # - {
+        #     name: "msvc2022",
+        #     generator:  "Visual Studio 17 2022",
+        #     extra: "-A x64",
+        #     on: "windows-latest"
+        #   }
+
+    runs-on: ${{ matrix.compiler.on }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: download compiler
+        if: ${{  matrix.compiler.url }}
+        shell: cmd
+        run: |
+          curl ${{ matrix.compiler.url }} -L --output compiler &&^
+          7z.exe x compiler
+          
+      - name: curl cmake-3.24.0-windows-x86_64.zip
+        shell: cmd
+        run: curl https://github.com/Kitware/CMake/releases/download/v3.24.0/cmake-3.24.0-windows-x86_64.zip -L --output cmake-3.24.0-windows-x86_64.zip && dir && 7z.exe x cmake-3.24.0-windows-x86_64.zip
+
+      - name: curl PortableGit-2.38.1-64-bit.7z.exe
+        shell: cmd
+        run: curl https://github.com/git-for-windows/git/releases/download/v2.38.1.windows.1/PortableGit-2.38.1-64-bit.7z.exe -L --output PortableGit-2.38.1-64-bit.7z.exe && dir && 7z.exe x PortableGit-2.38.1-64-bit.7z.exe -o"PortableGit-2.38.1-64-bit"
+
+      - shell: cmd
+        run: |
+          curl https://github.com/dirkarnez/libsndfile-prebuilt/releases/download/v1.2.0/libsndfile-v1.2.0-mingw64-x86_64-posix-seh-rev0-8.1.0.zip -L -O &&^
+          7z.exe x libsndfile-v1.2.0-mingw64-x86_64-posix-seh-rev0-8.1.0.zip -o"libsndfile-v1.2.0-mingw64-x86_64-posix-seh-rev0-8.1.0"
+          
+      - shell: cmd
+        run: |
+          curl https://github.com/dirkarnez/portaudio-prebuilt/releases/download/v19.7.0/portaudio-v19.7.0-mingw64-x86_64-posix-seh-rev0-8.1.0.zip -L -O &&^
+          7z.exe x portaudio-v19.7.0-mingw64-x86_64-posix-seh-rev0-8.1.0.zip -o"portaudio-v19.7.0-mingw64-x86_64-posix-seh-rev0-8.1.0"
+          
+      - name: set PATH, check mingw version, cmake generate, build and install
+        shell: cmd
+        run: |
+            set PATH=^
+            ${{ github.workspace }}\mingw64;^
+            ${{ github.workspace }}\mingw64\bin;^
+            ${{ github.workspace }}\cmake-3.24.0-windows-x86_64\bin;
+            set CD_LINUX=%CD:\=/%
+            cmake.exe -G "${{ matrix.compiler.generator }}" ${{ matrix.compiler.extra }} ^
+            -DCMAKE_BUILD_TYPE=Release ^
+            -DSndFile_DIR="%CD_LINUX%/libsndfile-v1.2.0-mingw64-x86_64-posix-seh-rev0-8.1.0/lib/cmake/SndFile" ^
+            -Dportaudio_DIR="%CD_LINUX%/portaudio-v19.7.0-mingw64-x86_64-posix-seh-rev0-8.1.0/lib/cmake/portaudio" ^
+            -B./cmake-build &&^
+            cd cmake-build && cmake --build . --config Release
+
+      - shell: cmd
+        run: |
+          cd cmake-build && .\audio-mixer.exe
+          
+      - shell: cmd
+        run: |
+          curl https://github.com/GyanD/codexffmpeg/releases/download/6.0/ffmpeg-6.0-full_build-shared.zip -L -O &&^
+          7z.exe x ffmpeg-6.0-full_build-shared.zip -o"ffmpeg-6.0-full_build-shared"
+
+      - shell: cmd
+        run: |
+          set PATH=^
+          ${{ github.workspace }}\ffmpeg-6.0-full_build-shared\ffmpeg-6.0-full_build-shared\bin;^
+          %SystemRoot%\System32;
+          cd audio &&^
+          ffmpeg -i "440Hz.wav" -i "880Hz.wav" -filter_complex amix=inputs=2:duration=first:dropout_transition=3:normalize=0 -c:a pcm_s16le "ffmpeg-sum.wav" &&^
+          ffmpeg -i ffmpeg-sum.wav -acodec pcm_s16le -f s16le ffmpeg-sum.pcm &&^
+          ffmpeg -i output.wav -acodec pcm_s16le -f s16le output.pcm &&^
+          fc /b ffmpeg-sum.pcm output.pcm
+          
+      - name: Archive Release
+        uses: thedoctor0/zip-release@master
+        with:
+          type: 'zip'
+          path: |
+            audio-mixer.exe
+          directory: "cmake-build"
+          filename: "audio-mixer-${{ github.ref_name }}-${{ matrix.compiler.name }}.zip"
+        
+      - name: Release prebuilt
+        uses: ncipollo/release-action@v1
+        with:
+          artifacts: "cmake-build/audio-mixer-${{ github.ref_name }}-${{ matrix.compiler.name }}.zip"
+          allowUpdates: true
+          token: ${{ secrets.GITHUB_TOKEN }}
