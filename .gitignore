@@ -1,3 +1,4 @@
 build
 cmake-build
 .vscode/settings.json
+audio/*.pcm
