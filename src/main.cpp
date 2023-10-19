@@ -11,6 +11,10 @@ int main()
   SF_INFO file_info2 = {};
   SNDFILE *file2 = sf_open("../audio/880Hz.wav", SFM_READ, &file_info2);
 
+    // Open the second audio file for reading
+  SF_INFO file_info3 = {};
+  SNDFILE *file3 = sf_open("../audio/560Hz.wav", SFM_READ, &file_info3);
+
   std::cout << file_info1.format << std::endl; //	SF_FORMAT_WAV			= 0x010000,		/* Microsoft WAV format (little endian default). */, SF_FORMAT_PCM_16 Signed 16 bit data
   std::cout << file_info2.format << std::endl;
 
@@ -35,6 +39,12 @@ int main()
     return EXIT_FAILURE;
   }
 
+  if (file_info1.samplerate != file_info3.samplerate)
+  {
+    printf("Error: input files must have the same sample rate\n");
+    return EXIT_FAILURE;
+  }
+
   // Create a new audio file for writing
   SF_INFO output_info = file_info1; // Use the same format as the first file
   SNDFILE *output_file = sf_open("../audio/output.wav", SFM_WRITE, &output_info);
@@ -43,6 +53,7 @@ int main()
   const int buffer_size = 1024;
   float buffer1[buffer_size];
   float buffer2[buffer_size];
+  float buffer3[buffer_size];
 
   sf_count_t total_frames = 0; // Total number of frames read
 
@@ -55,6 +66,8 @@ int main()
     // Read data from the second file
     const sf_count_t samples_read2 = sf_read_float(file2, buffer2, buffer_size);
 
+    const sf_count_t samples_read3 = sf_read_float(file3, buffer3, buffer_size);
+
     // Calculate the number of frames read in this iteration
     const sf_count_t frames_read = std::min(samples_read1, samples_read2) / file_info1.channels;
 
@@ -64,13 +77,23 @@ int main()
       break;
     }
 
+    unsigned int num_buffers = 3;
+
+    float* input_buffers[num_buffers] = {buffer1, buffer2, buffer3}; // Replace buffer1, buffer2, buffer3 with your actual buffer names
+
     float output_buffer[buffer_size];
 
     for (int i = 0; i < frames_read; i++)
     {
       for (int j = 0; j < file_info1.channels; j++)
       {
-        output_buffer[i * file_info1.channels + j] = buffer1[i * file_info1.channels + j] + buffer2[i * file_info2.channels + j];
+        //output_buffer[i * file_info1.channels + j] = buffer1[i * file_info1.channels + j] + buffer2[i * file_info2.channels + j];
+        output_buffer[i * file_info1.channels + j] = 0; // Initialize the output buffer element to 0
+
+        for (int k = 0; k < num_buffers; k++)
+        {
+            output_buffer[i * file_info1.channels + j] += input_buffers[k][i * file_info1.channels + j];
+        }
       }
     }
 
